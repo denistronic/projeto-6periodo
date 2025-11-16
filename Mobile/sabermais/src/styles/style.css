@@ -1,0 +1,104 @@
+/* style.css */
+
+/* 1. Base (Menor Prioridade, Afeta Tudo) */
+@import url('./base/global.css');
+@import url('./base/variables.css');
+@import url('./base/typography.css');
+
+/* 2. Layouts (Estrutura da Página) */
+@import url('./layouts/header.css');
+@import url('./layouts/footer.css');
+
+/* 3. Components (Elementos Reutilizáveis) */
+@import url('./components/button.css');
+@import url('./components/card-aula.css');
+@import url('./components/card-atividade.css');
+@import url('./components/modal-login.css');
+@import url('./components/modal-perfil.css');
+@import url('./components/modal-perfil-buscar.css');
+@import url('./components/modal-agendamento.css');
+@import url('./components/modal-filtros.css');
+/* ... outros componentes ... */
+
+/* 4. Pages (Maior Prioridade, Ajustes Finais) */
+@import url('./pages/home.css');
+@import url('./pages/login.css');
+@import url('./pages/perfil.css');
+@import url('./pages/dashboard.css');
+@import url('./pages/buscar.css');
+@import url('./pages/disponibilidade.css');
+@import url('./pages/editar-perfil.css');
+/* ... outras páginas ... */
+
+/* 5. PATCH GLOBAL PARA IONIC (EVITAR SOBREPOSIÇÃO EM .title E SEÇÃO FINAL)
+   --------------------------------------------------------------------- */
+
+/* qualquer .title agora é estática por padrão */
+h1.title,
+h2.title,
+.title {
+  position: static !important;
+  transform: none !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  margin: 0 0 1rem 0 !important;
+  width: 100%;
+  text-align: center;
+  z-index: 1 !important;
+}
+
+/* títulos da home em específico (categoria, como funciona, chamada final) */
+.categoria-cards .title,
+.secao-funcionamento .title,
+.section-texture-2 .title {
+  display: block !important;
+}
+
+/* tira qualquer posicionamento absoluto/transform na seção "Pronto para começar..." */
+.section-texture-2,
+.section-texture-2 *,
+.secao-anuncio,
+.secao-anuncio * {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  z-index: auto !important;
+}
+
+/* respiro entre "Como funciona?" e a chamada final */
+.secao-funcionamento {
+  margin-bottom: 3rem !important;
+}
+
+/* padding e layout da seção final */
+.section-texture-2 {
+  margin-top: 2rem !important;
+  padding: 3rem 1.5rem !important;
+}
+
+.secao-anuncio .actions {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  justify-content: center;
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .secao-anuncio .actions {
+    flex-direction: row;
+  }
+}
+
+/* 6. AJUSTE DE ESPAÇAMENTO PARA PÁGINAS DE FORMULÁRIO
+   -------------------------------------------------- */
+/* login, cadastro, editar-perfil (aluno/professor etc.) */
+.main form .title {
+  margin-top: 2rem !important;   /* afasta o título do cabeçalho */
+}
