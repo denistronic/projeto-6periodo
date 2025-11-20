@@ -1,7 +1,0 @@
-{
-  "name": "sabermais",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "react-vite"
-}
