@@ -103,7 +103,7 @@ export function Index() {
 
         {/* Passo 1 */}
         <View style={[styles.stepCard, styles.shadow]}>
-          <View className="stepBubble" style={styles.stepBubble}>
+          <View style={styles.stepBubble}>
             <Text style={styles.stepNumber}>1</Text>
           </View>
           <Text style={styles.stepTitle}>Busque e Descubra</Text>

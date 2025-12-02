@@ -52,7 +52,7 @@ export function CadastrarProfessor() {
   });
 
   function irParaLogin() {
-    navigation.navigate('PerfilLogin');
+    navigation.navigate('Login');
   }
 
   function limparCpf(value: string) {
@@ -198,7 +198,7 @@ export function CadastrarProfessor() {
         [
           {
             text: 'Ir para Login',
-            onPress: () => navigation.navigate('PerfilLogin'),
+            onPress: () => navigation.navigate('Login'),
           },
           { text: 'OK' },
         ],

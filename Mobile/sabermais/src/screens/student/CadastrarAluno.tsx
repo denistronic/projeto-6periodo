@@ -46,7 +46,7 @@ export function CadastrarAluno() {
   });
 
   function irParaLogin() {
-    navigation.navigate('PerfilLogin'); // mesma tela de Login.tsx
+    navigation.navigate('Login'); // mesma tela de Login.tsx
   }
 
   function limparCpf(value: string) {
@@ -170,7 +170,7 @@ export function CadastrarAluno() {
         [
           {
             text: 'Ir para Login',
-            onPress: () => navigation.navigate('PerfilLogin'),
+            onPress: () => navigation.navigate('Login'),
           },
           { text: 'OK' },
         ],
