@@ -35,10 +35,12 @@ export function Cadastrar() {
   const navigation = useNavigation<PerfilNav>();
 
   const handleStudentPress = () => {
+    // ANTES podia estar 'PerfilCadastroAluno'
     navigation.navigate('CadastroAluno');
   };
 
   const handleTeacherPress = () => {
+    // ANTES podia estar 'PerfilCadastroProfessor'
     navigation.navigate('CadastroProfessor');
   };
 
@@ -50,7 +52,6 @@ export function Cadastrar() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* Título */}
         <Text style={styles.title}>Cadastro</Text>
 
         <Text style={styles.subtitle}>

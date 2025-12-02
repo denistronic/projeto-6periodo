@@ -1,317 +1,382 @@
 // src/screens/student/CadastrarAluno.tsx
 import React, { useState } from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
   View,
   Text,
   TextInput,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
-import { SaberHeader } from '../../components/SaberHeader';
-import type { PerfilStackParamList } from '../../navigation/PerfilStack';
 
 const colors = {
-  primary: '#F2C016',
+  primary: '#F2C016', // cor-primaria
   secondary: '#1B8EF2',
   text: '#37474F',
-  background: '#F7F9F9',
-  white: '#FFF',
+  subtitle: '#607D8B',
   borderSoft: '#ECEFF1',
-  black: '#000',
-  progressBg: '#E0E0E0',
+  background: '#F7F9F9',
+  inputBorder: '#B0BEC5',
+  danger: '#E53935',
+  white: '#FFFFFF',
 };
-
-const fonts = {
-  title: 'Poppins',
-  text: 'Lato',
-};
-
-type PerfilNav = NativeStackNavigationProp<
-  PerfilStackParamList,
-  'CadastroAluno'
->;
 
 export function CadastrarAluno() {
-  const navigation = useNavigation<PerfilNav>();
+  const navigation = useNavigation<any>();
 
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
+  const [cpf, setCpf] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
-  const [showSenha, setShowSenha] = useState(false);
-  const [showConfirmar, setShowConfirmar] = useState(false);
 
-  const handleNext = () => {
-    console.log('Próximo passo do cadastro de aluno:', {
-      nome,
-      email,
-      senha,
-      confirmarSenha,
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  // quais campos estão com erro (para borda vermelha)
+  const [fieldErrors, setFieldErrors] = useState({
+    nome: false,
+    email: false,
+    cpf: false,
+    senha: false,
+    confirmarSenha: false,
+  });
+
+  function irParaLogin() {
+    navigation.navigate('PerfilLogin'); // mesma tela de Login.tsx
+  }
+
+  function limparCpf(value: string) {
+    return value.replace(/\D/g, '');
+  }
+
+  function resetFieldErrors() {
+    setFieldErrors({
+      nome: false,
+      email: false,
+      cpf: false,
+      senha: false,
+      confirmarSenha: false,
     });
-    // depois você pode navegar para Etapa 2:
-    // navigation.navigate('CadastroAlunoEtapa2');
-  };
+  }
 
-  const handleGoLogin = () => {
-    // “Entrar” volta pra tela Login
-    navigation.navigate('Login');
-  };
+  function validarCampos(): boolean {
+    resetFieldErrors();
+    setErro(null);
+
+    // Nome
+    if (!nome.trim()) {
+      setErro('Informe o nome completo.');
+      setFieldErrors(prev => ({ ...prev, nome: true }));
+      return false;
+    }
+
+    // E-mail
+    if (!email.trim()) {
+      setErro('Informe o e-mail.');
+      setFieldErrors(prev => ({ ...prev, email: true }));
+      return false;
+    }
+    const emailRegex = /\S+@\S+\.\S+/;
+    if (!emailRegex.test(email)) {
+      setErro('Informe um e-mail válido.');
+      setFieldErrors(prev => ({ ...prev, email: true }));
+      return false;
+    }
+
+    // CPF
+    const cpfLimpo = limparCpf(cpf);
+    if (!cpfLimpo) {
+      setErro('Informe o CPF.');
+      setFieldErrors(prev => ({ ...prev, cpf: true }));
+      return false;
+    }
+    if (cpfLimpo.length !== 11) {
+      setErro('CPF deve ter 11 dígitos numéricos.');
+      setFieldErrors(prev => ({ ...prev, cpf: true }));
+      return false;
+    }
+
+    // Senha
+    if (!senha.trim()) {
+      setErro('Informe a senha.');
+      setFieldErrors(prev => ({ ...prev, senha: true }));
+      return false;
+    }
+    if (senha.length < 6) {
+      setErro('A senha deve ter pelo menos 6 caracteres.');
+      setFieldErrors(prev => ({ ...prev, senha: true }));
+      return false;
+    }
+
+    // Confirmar senha
+    if (senha !== confirmarSenha) {
+      setErro('A confirmação de senha não confere.');
+      setFieldErrors(prev => ({ ...prev, confirmarSenha: true }));
+      return false;
+    }
+
+    return true;
+  }
+
+  async function handleProximo() {
+    if (!validarCampos()) {
+      return;
+    }
+
+    setLoading(true);
+    setErro(null);
+
+    const cpfLimpo = limparCpf(cpf);
+
+    try {
+      const response = await fetch(
+        'https://chivalrous-maidenish-bertha.ngrok-free.dev/api/Alunos',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Se no futuro a API exigir auth:
+            // Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            id: 0,
+            nome: nome.trim(),
+            email: email.trim(),
+            password: senha,
+            cpf: cpfLimpo,
+            tipo: 0,
+            descricao: 'Aluno cadastrado pelo app Saber+.',
+          }),
+        },
+      );
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const msgApi =
+          data && (data.message || data.erro || data.error || data.title);
+        setErro(msgApi || 'Erro ao cadastrar aluno. Tente novamente.');
+        return;
+      }
+
+      // SUCESSO → mensagem + navegação para Login
+      Alert.alert(
+        'Cadastro feito!',
+        'Cadastro feito! Faça login agora.',
+        [
+          {
+            text: 'Ir para Login',
+            onPress: () => navigation.navigate('PerfilLogin'),
+          },
+          { text: 'OK' },
+        ],
+      );
+
+      // limpa campos
+      setNome('');
+      setEmail('');
+      setCpf('');
+      setSenha('');
+      setConfirmarSenha('');
+      resetFieldErrors();
+    } catch (e) {
+      console.error('Erro ao cadastrar aluno:', e);
+      setErro('Não foi possível conectar ao servidor. Verifique sua internet.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <SaberHeader />
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <Text style={styles.title}>Cadastro de Aluno</Text>
 
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Título */}
-        <Text style={styles.title}>Cadastro de Aluno</Text>
-
-        {/* Já possui conta? Entrar */}
-        <View style={styles.rowLogin}>
-          <Text style={styles.textDefault}>Já possui uma conta? </Text>
-          <Text style={styles.linkText} onPress={handleGoLogin}>
-            Entrar
-          </Text>
-        </View>
-
-        {/* Etapa / barra de progresso */}
-        <View style={styles.stepContainer}>
-          <Text style={styles.stepText}>Etapa 1 de 2</Text>
-          <View style={styles.progressBarBackground}>
-            <View style={styles.progressBarFill} />
-          </View>
-        </View>
-
-        {/* Nome completo */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>
-            Nome completo <Text style={styles.required}>*</Text>
-          </Text>
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Seu nome completo"
-              placeholderTextColor="#9E9E9E"
-              value={nome}
-              onChangeText={setNome}
-            />
-          </View>
-        </View>
-
-        {/* E-mail */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>
-            E-mail <Text style={styles.required}>*</Text>
-          </Text>
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Seu e-mail"
-              placeholderTextColor="#9E9E9E"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
-        </View>
-
-        {/* Senha */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>
-            Senha <Text style={styles.required}>*</Text>
-          </Text>
-          <View style={styles.inputWrapperRow}>
-            <TextInput
-              style={styles.inputPassword}
-              placeholder="Sua senha"
-              placeholderTextColor="#9E9E9E"
-              value={senha}
-              onChangeText={setSenha}
-              secureTextEntry={!showSenha}
-            />
-            <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setShowSenha(prev => !prev)}
-            >
-              <Text style={styles.eyeText}>
-                {showSenha ? '🙈' : '👁️'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Confirmar senha */}
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>
-            Confirmar senha <Text style={styles.required}>*</Text>
-          </Text>
-          <View style={styles.inputWrapperRow}>
-            <TextInput
-              style={styles.inputPassword}
-              placeholder="Confirme sua senha"
-              placeholderTextColor="#9E9E9E"
-              value={confirmarSenha}
-              onChangeText={setConfirmarSenha}
-              secureTextEntry={!showConfirmar}
-            />
-            <TouchableOpacity
-              style={styles.eyeButton}
-              onPress={() => setShowConfirmar(prev => !prev)}
-            >
-              <Text style={styles.eyeText}>
-                {showConfirmar ? '🙈' : '👁️'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Botão Próximo */}
-        <TouchableOpacity
-          style={styles.nextButton}
-          activeOpacity={0.9}
-          onPress={handleNext}
-        >
-          <Text style={styles.nextButtonText}>Próximo</Text>
+      <View style={styles.loginRow}>
+        <Text style={styles.loginText}>Já possui uma conta? </Text>
+        <TouchableOpacity onPress={irParaLogin}>
+          <Text style={styles.loginLink}>Entrar</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+      </View>
+
+      <View style={styles.progressContainer}>
+        <Text style={styles.stepText}>Etapa 1 de 2</Text>
+        <View style={styles.progressBarBackground}>
+          <View style={styles.progressBarFill} />
+        </View>
+      </View>
+
+      <Text style={styles.label}>Nome completo *</Text>
+      <TextInput
+        style={[
+          styles.input,
+          fieldErrors.nome && { borderColor: colors.danger },
+        ]}
+        placeholder="Seu nome completo"
+        placeholderTextColor="#90A4AE"
+        value={nome}
+        onChangeText={setNome}
+      />
+
+      <Text style={styles.label}>E-mail *</Text>
+      <TextInput
+        style={[
+          styles.input,
+          fieldErrors.email && { borderColor: colors.danger },
+        ]}
+        placeholder="Seu e-mail"
+        placeholderTextColor="#90A4AE"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        value={email}
+        onChangeText={setEmail}
+      />
+
+      <Text style={styles.label}>CPF *</Text>
+      <TextInput
+        style={[
+          styles.input,
+          fieldErrors.cpf && { borderColor: colors.danger },
+        ]}
+        placeholder="Somente números"
+        placeholderTextColor="#90A4AE"
+        keyboardType="numeric"
+        maxLength={14}
+        value={cpf}
+        onChangeText={setCpf}
+      />
+
+      <Text style={styles.label}>Senha *</Text>
+      <TextInput
+        style={[
+          styles.input,
+          fieldErrors.senha && { borderColor: colors.danger },
+        ]}
+        placeholder="Sua senha"
+        placeholderTextColor="#90A4AE"
+        secureTextEntry
+        value={senha}
+        onChangeText={setSenha}
+      />
+
+      <Text style={styles.label}>Confirmar senha *</Text>
+      <TextInput
+        style={[
+          styles.input,
+          fieldErrors.confirmarSenha && { borderColor: colors.danger },
+        ]}
+        placeholder="Repita a senha"
+        placeholderTextColor="#90A4AE"
+        secureTextEntry
+        value={confirmarSenha}
+        onChangeText={setConfirmarSenha}
+      />
+
+      {erro && <Text style={styles.errorText}>{erro}</Text>}
+
+      <TouchableOpacity
+        style={[styles.submitButton, loading && { opacity: 0.7 }]}
+        onPress={handleProximo}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.white} />
+        ) : (
+          <Text style={styles.submitText}>Próximo</Text>
+        )}
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  container: {
+  content: {
     paddingHorizontal: 16,
     paddingTop: 24,
     paddingBottom: 32,
   },
-
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
-    fontFamily: fonts.title,
     color: colors.text,
+    marginBottom: 12,
     textAlign: 'center',
-    marginBottom: 16,
   },
-
-  rowLogin: {
+  loginRow: {
     flexDirection: 'row',
     marginBottom: 16,
+    justifyContent: 'center',
   },
-  textDefault: {
+  loginText: {
     fontSize: 14,
-    fontFamily: fonts.text,
-    color: colors.text,
+    color: colors.subtitle,
   },
-  linkText: {
+  loginLink: {
     fontSize: 14,
-    fontFamily: fonts.text,
-    color: colors.black,
-    textDecorationLine: 'underline',
+    color: colors.secondary,
     fontWeight: '600',
+    textDecorationLine: 'underline',
   },
-
-  stepContainer: {
-    marginBottom: 16,
+  progressContainer: {
+    marginBottom: 24,
   },
   stepText: {
-    fontSize: 13,
-    fontFamily: fonts.text,
-    color: colors.text,
+    fontSize: 12,
+    color: colors.subtitle,
     marginBottom: 4,
   },
   progressBarBackground: {
     height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.progressBg,
+    borderRadius: 999,
+    backgroundColor: colors.borderSoft,
     overflow: 'hidden',
   },
   progressBarFill: {
-    width: '45%', // representando etapa 1 de 2
-    height: '100%',
-    backgroundColor: colors.black,
-  },
-
-  fieldGroup: {
-    marginBottom: 18,
+    height: 4,
+    width: '50%',
+    backgroundColor: colors.secondary,
   },
   label: {
-    fontSize: 13,
-    fontFamily: fonts.text,
+    fontSize: 14,
+    fontWeight: '600',
     color: colors.text,
     marginBottom: 6,
-  },
-  required: {
-    color: colors.black,
-  },
-
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: colors.black,
-    borderRadius: 10,
-    backgroundColor: colors.white,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    marginTop: 10,
   },
   input: {
-    fontSize: 14,
-    fontFamily: fonts.text,
-    color: colors.text,
-    paddingVertical: 4,
-  },
-
-  inputWrapperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.black,
-    borderRadius: 10,
-    backgroundColor: colors.white,
+    borderColor: colors.inputBorder,
+    borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  inputPassword: {
-    flex: 1,
+    paddingVertical: 10,
+    backgroundColor: colors.white,
     fontSize: 14,
-    fontFamily: fonts.text,
-    color: colors.text,
-    paddingVertical: 6,
-    paddingRight: 8,
+    marginBottom: 4,
   },
-  eyeButton: {
-    width: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  errorText: {
+    color: colors.danger,
+    fontSize: 13,
+    marginTop: 8,
+    marginBottom: 12,
+    textAlign: 'center',
   },
-  eyeText: {
-    fontSize: 16,
-  },
-
-  nextButton: {
-    marginTop: 12,
+  submitButton: {
+    marginTop: 16,
     backgroundColor: colors.primary,
-    borderRadius: 10,
+    borderRadius: 8,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  nextButtonText: {
-    color: colors.black,
-    fontSize: 15,
-    fontWeight: '600',
-    fontFamily: fonts.text,
+  submitText: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
-

@@ -1,5 +1,5 @@
 // src/screens/Dashboard.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -7,16 +7,27 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { SaberHeader } from '../components/SaberHeader';
+import type { RootTabParamList } from '../navigation/TabNavigator';
+import { DashboardProfessor } from './teachers/DashboardProfessor';
+import { DashboardAluno } from './student/DashboardAluno';
 
 const colors = {
   primary: '#F2C016',   // cor-primaria
   secondary: '#1B8EF2', // cor-secundaria
   text: '#37474F',
   background: '#F7F9F9',
-  white: '#FFF',
+  card: '#FFFFFF',
   borderSoft: '#ECEFF1',
+  mutedText: '#607D8B',
+  white: '#FFFFFF',
+  black: '#000000',
 };
 
 const fonts = {
@@ -24,97 +35,114 @@ const fonts = {
   text: 'Lato',
 };
 
-export function Dashboard() {
-  // depois você pode pegar esse nome de contexto / API / route params
-  const userName = '';
+type DashboardTabNav = BottomTabNavigationProp<RootTabParamList, 'Dashboard'>;
 
+export function Dashboard() {
+  const navigation = useNavigation<DashboardTabNav>();
+
+  const [loading, setLoading] = useState(true);
+  const [userType, setUserType] = useState<number | null>(null);
+
+  useEffect(() => {
+    async function loadUserType() {
+      try {
+        const stored = await AsyncStorage.getItem('@sabermais_userType');
+        if (stored != null && stored !== '') {
+          setUserType(Number(stored));
+        } else {
+          setUserType(null);
+        }
+      } catch (err) {
+        console.error('[Dashboard] Erro ao ler userType:', err);
+        setUserType(null);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadUserType();
+  }, []);
+
+  function handleEntrar() {
+    // Vai para a aba Perfil, que abre o Login
+    navigation.navigate('Perfil');
+  }
+
+  function handleCadastrar() {
+    // Vai para a aba Perfil já indo para a tela de Cadastro (escolher aluno/professor)
+    navigation.navigate('Perfil' as never, { screen: 'Cadastro' } as never);
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SaberHeader />
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="small" color={colors.secondary} />
+          <Text style={styles.loadingText}>
+            Carregando seu dashboard…
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Professor logado
+  if (userType === 1) {
+    return <DashboardProfessor />;
+  }
+
+  // Aluno logado
+  if (userType === 0) {
+    return <DashboardAluno />;
+  }
+
+  // Não logado / tipo desconhecido
   return (
     <SafeAreaView style={styles.safeArea}>
       <SaberHeader />
 
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* Saudações */}
-        <View style={styles.headerArea}>
-          <Text style={styles.greetingText}>
-            Olá{userName ? `, ${userName}` : ','} <Text>👋</Text>
+        <Text style={styles.title}>Dashboard para Aluno/Professor</Text>
+
+        <Text style={styles.subtitle}>
+          Entre com sua conta de aluno ou professor para acompanhar aulas,
+          agendamentos e sua rotina de estudos.
+        </Text>
+
+        <View style={styles.buttonsWrapper}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            activeOpacity={0.9}
+            onPress={handleEntrar}
+          >
+            <Text style={styles.primaryButtonText}>Faça login</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            activeOpacity={0.9}
+            onPress={handleCadastrar}
+          >
+            <Text style={styles.secondaryButtonText}>Cadastre-se</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>Como funciona?</Text>
+          <Text style={styles.infoText}>
+            • Alunos conseguem ver próximos agendamentos e histórico de aulas.
+            {'\n'}
+            • Professores conseguem acompanhar sua disponibilidade, agendamentos
+            e atividades recentes.
           </Text>
-          <Text style={styles.subGreeting}>
-            Bem-vindo(a) de volta ao seu painel de controle.
-          </Text>
-        </View>
-
-        {/* Cards principais */}
-        <View style={styles.cardsGrid}>
-          <DashboardCard
-            icon="✅"
-            label="Aulas Agendadas"
-          />
-          <DashboardCard
-            icon="🎓"
-            label="Aulas Concluídas"
-          />
-          <DashboardCard
-            icon="👥"
-            label="Alunos"
-          />
-          <DashboardCard
-            icon="🕒"
-            label="Horas de Aula"
-          />
-        </View>
-
-        {/* Próximas aulas */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Próximas Aulas</Text>
-            <TouchableOpacity activeOpacity={0.8}>
-              <Text style={styles.sectionLink}>Ver todas</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.sectionBody}>
-            <Text style={styles.sectionPlaceholder}>
-              Você ainda não tem aulas agendadas.
-            </Text>
-          </View>
-        </View>
-
-        {/* Atividade recente */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Atividade Recente</Text>
-          </View>
-
-          <View style={styles.sectionBody}>
-            <Text style={styles.sectionPlaceholder}>
-              Nenhuma atividade recente encontrada.
-            </Text>
-          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-/**
- * Card reutilizável do dashboard (ícone + texto)
- */
-type DashboardCardProps = {
-  icon: string;
-  label: string;
-};
-
-function DashboardCard({ icon, label }: DashboardCardProps) {
-  return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.9}>
-      <View style={styles.cardIconCircle}>
-        <Text style={styles.cardIcon}>{icon}</Text>
-      </View>
-      <Text style={styles.cardLabel}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 
@@ -123,114 +151,89 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scroll: {
+    flex: 1,
+  },
   container: {
     paddingHorizontal: 16,
-    paddingTop: 20,
+    paddingTop: 24,
     paddingBottom: 32,
   },
-
-  headerArea: {
-    marginBottom: 24,
-  },
-  greetingText: {
-    fontSize: 22,
-    fontWeight: '700',
-    fontFamily: fonts.title,
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: 6,
-  },
-  subGreeting: {
-    fontSize: 14,
-    fontFamily: fonts.text,
-    color: '#607D8B',
-    textAlign: 'center',
-  },
-
-  cardsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  card: {
-    width: '48%',
-    backgroundColor: colors.white,
-    borderRadius: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-
-    // sombra leve
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  cardIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#E3F2FD',
+  loadingBox: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
-  },
-  cardIcon: {
-    fontSize: 22,
-  },
-  cardLabel: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: fonts.text,
-    color: colors.text,
-    fontWeight: '600',
-  },
-
-  section: {
-    marginBottom: 18,
-  },
-  sectionHeader: {
-    backgroundColor: '#ECEFF1',
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
-  sectionTitle: {
+  loadingText: {
+    marginTop: 8,
     fontSize: 14,
     fontFamily: fonts.text,
+    color: colors.mutedText,
+  },
+  title: {
+    fontSize: 22,
+    fontFamily: fonts.title,
     fontWeight: '700',
     color: colors.text,
+    textAlign: 'center',
+    marginBottom: 12,
   },
-  sectionLink: {
-    fontSize: 13,
+  subtitle: {
+    fontSize: 14,
     fontFamily: fonts.text,
-    color: colors.secondary,
+    color: colors.mutedText,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  buttonsWrapper: {
+    gap: 12,
+    marginBottom: 24,
+  },
+  primaryButton: {
+    backgroundColor: colors.secondary,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: colors.white,
+    fontSize: 15,
+    fontFamily: fonts.text,
     fontWeight: '600',
   },
-  sectionBody: {
+  secondaryButton: {
     backgroundColor: colors.white,
-    borderBottomLeftRadius: 10,
-    borderBottomRightRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 18,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
     borderWidth: 1,
-    borderTopWidth: 0,
     borderColor: colors.borderSoft,
   },
-  sectionPlaceholder: {
-    fontSize: 13,
+  secondaryButtonText: {
+    color: colors.secondary,
+    fontSize: 15,
     fontFamily: fonts.text,
-    color: '#90A4AE',
+    fontWeight: '600',
+  },
+  infoBox: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.borderSoft,
+  },
+  infoTitle: {
+    fontSize: 15,
+    fontFamily: fonts.title,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  infoText: {
+    fontSize: 14,
+    fontFamily: fonts.text,
+    color: colors.mutedText,
   },
 });
-
-export default Dashboard;
-

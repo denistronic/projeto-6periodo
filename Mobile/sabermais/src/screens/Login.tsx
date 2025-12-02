@@ -8,21 +8,27 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { SaberHeader } from '../components/SaberHeader';
 import type { PerfilStackParamList } from '../navigation/PerfilStack';
 
+const API_BASE = 'https://chivalrous-maidenish-bertha.ngrok-free.dev';
+
 const colors = {
-  primary: '#F2C016',   // cor-primaria
+  primary: '#F2C016', // cor-primaria
   secondary: '#1B8EF2', // cor-secundaria
   text: '#37474F',
   background: '#F7F9F9',
-  white: '#FFF',
   borderSoft: '#ECEFF1',
-  black: '#000',
+  white: '#FFFFFF',
+  black: '#000000',
+  mutedText: '#607D8B',
+  danger: '#E53935',
 };
 
 const fonts = {
@@ -30,97 +36,242 @@ const fonts = {
   text: 'Lato',
 };
 
-type PerfilNav = NativeStackNavigationProp<PerfilStackParamList, 'Login'>;
+type LoginNav = NativeStackNavigationProp<PerfilStackParamList, 'Login'>;
 
 export function Login() {
-  const navigation = useNavigation<PerfilNav>();
+  const navigation = useNavigation<LoginNav>();
 
   const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleLogin = () => {
-    console.log('Login com:', { email, senha });
-    // depois você coloca a lógica real aqui
-  };
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleGoCadastro = () => {
-    // Navega para a tela "Cadastro" dentro do PerfilStack
+  function validateFields() {
+    if (!email.trim() || !password.trim()) {
+      setErrorMessage('Preencha e-mail e senha para continuar.');
+      return false;
+    }
+    if (!email.includes('@')) {
+      setErrorMessage('Digite um e-mail válido.');
+      return false;
+    }
+    return true;
+  }
+
+  async function handleLogin() {
+    if (!validateFields()) return;
+
+    try {
+      setLoading(true);
+      setErrorMessage(null);
+
+      // 1) Autenticar e pegar o token
+      const authResponse = await fetch(`${API_BASE}/api/Usuarios/Authenticate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password: password,
+        }),
+      });
+
+      if (!authResponse.ok) {
+        const text = await authResponse.text();
+        console.error('[Login] Erro no Authenticate:', text);
+        if (authResponse.status === 401) {
+          setErrorMessage('E-mail ou senha inválidos.');
+        } else {
+          setErrorMessage(
+            `Não foi possível autenticar agora (HTTP ${authResponse.status}). Tente novamente.`,
+          );
+        }
+        return;
+      }
+
+      const authData: { jwtToken: string } = await authResponse.json();
+      const jwtToken = authData.jwtToken;
+
+      // 2) Descobrir quem é o usuário logado
+      const meResponse = await fetch(`${API_BASE}/api/Usuarios/me`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+
+      if (!meResponse.ok) {
+        const text = await meResponse.text();
+        console.error('[Login] Erro no /me:', text);
+        setErrorMessage(
+          `Não consegui identificar o usuário logado (HTTP ${meResponse.status}).`,
+        );
+        return;
+      }
+
+      const meData: { id: number; nome: string; email: string } =
+        await meResponse.json();
+
+      // 3) Buscar detalhes do usuário (tipo = professor/aluno)
+      const userDetailsResponse = await fetch(
+        `${API_BASE}/api/Usuarios/${meData.id}`,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${jwtToken}`,
+          },
+        },
+      );
+
+      if (!userDetailsResponse.ok) {
+        const text = await userDetailsResponse.text();
+        console.error('[Login] Erro no /Usuarios/{id}:', text);
+        setErrorMessage(
+          `Não foi possível carregar os detalhes do usuário (HTTP ${userDetailsResponse.status}).`,
+        );
+        return;
+      }
+
+      const userDetails: {
+        id: number;
+        nome: string;
+        email: string;
+        tipo: number;
+      } = await userDetailsResponse.json();
+
+      const tipo = userDetails.tipo;
+
+      // 4) Guardar sessão no AsyncStorage
+      await AsyncStorage.multiSet([
+        ['@sabermais_token', jwtToken],
+        ['@sabermais_userId', String(userDetails.id)],
+        ['@sabermais_userType', String(tipo)],
+      ]);
+
+      // Se o id do usuário for o mesmo id de Professor/Aluno,
+      // já deixamos salvo para as telas de perfil usarem:
+      if (tipo === 1) {
+        await AsyncStorage.setItem(
+          '@sabermais_professorId',
+          String(userDetails.id),
+        );
+      } else if (tipo === 0) {
+        await AsyncStorage.setItem(
+          '@sabermais_alunoId',
+          String(userDetails.id),
+        );
+      }
+
+      // 5) Redirecionar de acordo com o tipo
+      if (tipo === 1) {
+        // Professor
+        navigation.replace('PerfilProfessor');
+      } else if (tipo === 0) {
+        // Aluno
+        navigation.replace('PerfilAluno');
+      } else {
+        console.warn('[Login] Tipo de usuário desconhecido:', tipo);
+        setErrorMessage(
+          'Seu tipo de usuário não foi reconhecido. Verifique com o administrador.',
+        );
+      }
+    } catch (err: any) {
+      console.error('[Login] Erro inesperado:', err);
+      setErrorMessage(
+        'Ocorreu um erro inesperado ao tentar fazer login. Verifique sua conexão e tente novamente.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleGoToCadastro() {
     navigation.navigate('Cadastro');
-  };
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Topo com logo Saber+ */}
       <SaberHeader />
 
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {/* Título */}
         <Text style={styles.title}>Entrar no perfil</Text>
 
-        {/* Texto de criar cadastro */}
-        <View style={styles.createRow}>
-          <Text style={styles.createText}>Não possui uma conta? </Text>
-          <Text
-            style={styles.createLink}
-            onPress={handleGoCadastro}
-          >
+        <View style={styles.inlineTextRow}>
+          <Text style={styles.inlineText}>Não possui uma conta? </Text>
+          <Text style={styles.linkText} onPress={handleGoToCadastro}>
             Criar cadastro
           </Text>
         </View>
 
-        {/* Campo E-mail */}
+        {/* E-mail */}
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>E-mail</Text>
-          <View style={styles.inputWrapper}>
-            <TextInput
-              style={styles.input}
-              placeholder="Seu e-mail"
-              placeholderTextColor="#9E9E9E"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
-          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Seu e-mail"
+            placeholderTextColor="#B0BEC5"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={email}
+            onChangeText={setEmail}
+          />
         </View>
 
-        {/* Campo Senha */}
+        {/* Senha */}
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>
-            Senha <Text style={styles.required}>*</Text>
-          </Text>
-          <View style={styles.inputWrapperRow}>
+          <Text style={styles.label}>Senha *</Text>
+
+          <View style={styles.passwordWrapper}>
             <TextInput
-              style={styles.inputPassword}
+              style={[styles.input, styles.passwordInput]}
               placeholder="Sua senha"
-              placeholderTextColor="#9E9E9E"
+              placeholderTextColor="#B0BEC5"
               secureTextEntry={!showPassword}
-              value={senha}
-              onChangeText={setSenha}
+              autoCapitalize="none"
+              value={password}
+              onChangeText={setPassword}
             />
+
             <TouchableOpacity
               style={styles.eyeButton}
-              onPress={() => setShowPassword(prev => !prev)}
+              onPress={() => setShowPassword((prev) => !prev)}
             >
-              <Text style={styles.eyeText}>
-                {showPassword ? '🙈' : '👁️'}
-              </Text>
+              <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁️'}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
+        {/* Mensagem de erro */}
+        {errorMessage && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          </View>
+        )}
+
         {/* Botão Entrar */}
         <TouchableOpacity
-          style={styles.loginButton}
-          activeOpacity={0.9}
+          style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleLogin}
+          disabled={loading}
+          activeOpacity={0.9}
         >
-          <Text style={styles.loginButtonText}>Entrar</Text>
+          {loading ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Text style={styles.buttonText}>Entrar</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -132,105 +283,102 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scroll: {
+    flex: 1,
+  },
   container: {
     paddingHorizontal: 16,
     paddingTop: 24,
     paddingBottom: 32,
   },
-
   title: {
-    fontSize: 20,
-    fontWeight: '700',
+    fontSize: 22,
     fontFamily: fonts.title,
+    fontWeight: '700',
     color: colors.text,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 12,
   },
-
-  createRow: {
+  inlineTextRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 24,
   },
-  createText: {
+  inlineText: {
     fontSize: 14,
     fontFamily: fonts.text,
     color: colors.text,
   },
-  createLink: {
+  linkText: {
     fontSize: 14,
     fontFamily: fonts.text,
-    color: colors.black,
-    textDecorationLine: 'underline',
+    color: colors.secondary,
     fontWeight: '600',
   },
-
   fieldGroup: {
     marginBottom: 18,
   },
   label: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: fonts.text,
     color: colors.text,
     marginBottom: 6,
   },
-  required: {
-    color: colors.black,
-  },
-
-  inputWrapper: {
-    borderWidth: 1,
-    borderColor: colors.black,
-    borderRadius: 10,
-    backgroundColor: colors.white,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
   input: {
-    fontSize: 14,
-    fontFamily: fonts.text,
-    color: colors.text,
-    paddingVertical: 4,
-  },
-
-  inputWrapperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.black,
-    borderRadius: 10,
-    backgroundColor: colors.white,
     paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  inputPassword: {
-    flex: 1,
+    paddingVertical: 10,
     fontSize: 14,
     fontFamily: fonts.text,
     color: colors.text,
-    paddingVertical: 6,
-    paddingRight: 8,
+  },
+  passwordWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  passwordInput: {
+    paddingRight: 40,
   },
   eyeButton: {
-    width: 32,
-    alignItems: 'center',
+    position: 'absolute',
+    right: 10,
+    height: '100%',
     justifyContent: 'center',
   },
   eyeText: {
-    fontSize: 16,
+    fontSize: 18,
   },
-
-  loginButton: {
-    marginTop: 20,
+  errorBox: {
+    backgroundColor: '#FFEBEE',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  errorText: {
+    fontSize: 13,
+    fontFamily: fonts.text,
+    color: colors.danger,
+  },
+  button: {
     backgroundColor: colors.black,
     borderRadius: 10,
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
+    marginTop: 8,
   },
-  loginButtonText: {
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  buttonText: {
     color: colors.white,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
     fontFamily: fonts.text,
+    fontWeight: '600',
   },
 });
