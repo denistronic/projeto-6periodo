@@ -9,9 +9,9 @@ import {
   TextInput,
   ActivityIndicator,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native';
 
 import { SaberHeader } from '../components/SaberHeader';
 
@@ -38,6 +38,7 @@ type Professor = {
   id: number;
   nome: string;
   email: string;
+  password?: string;
   cpf?: string;
   tipo?: number;
   descricao?: string;
@@ -47,6 +48,8 @@ type Professor = {
 };
 
 export function Buscar() {
+  const navigation = useNavigation<any>();
+
   const [professores, setProfessores] = useState<Professor[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingRefresh, setLoadingRefresh] = useState(false);
@@ -124,12 +127,16 @@ export function Buscar() {
   }, [professores, search]);
 
   function handleVerOpcoes(prof: Professor) {
-    Alert.alert(
-      'Opções de aula',
-      `Futuramente aqui você vai poder agendar uma aula com ${prof.nome} direto pelo app.\n\nPor enquanto, use esta tela apenas para buscar e comparar professores.`,
-    );
-    // Próximo passo: navegar para uma tela de agendamento passando o professorId:
-    // navigation.navigate('Perfil', { screen: 'AgendarProfessor', params: { professorId: prof.id } });
+    // IMPORTANTE:
+    // "Perfil" é exatamente o name da Tab onde está o PerfilStack
+    // em TabNavigator: <Tab.Screen name="Perfil" component={PerfilStack} />
+    navigation.navigate('Perfil', {
+      screen: 'Contratar',
+      params: {
+        professorId: prof.id,
+        professorNome: prof.nome,
+      },
+    });
   }
 
   const isLoadingInitial = loading && !loadingRefresh;
@@ -237,7 +244,10 @@ export function Buscar() {
                 {prof.certificacoes && prof.certificacoes.length > 0 && (
                   <View style={styles.chipsRowSecondary}>
                     {prof.certificacoes.map((cert, idx) => (
-                      <View key={`${prof.id}-cert-${idx}`} style={styles.chipSecondary}>
+                      <View
+                        key={`${prof.id}-cert-${idx}`}
+                        style={styles.chipSecondary}
+                      >
                         <Text style={styles.chipSecondaryText}>{cert}</Text>
                       </View>
                     ))}

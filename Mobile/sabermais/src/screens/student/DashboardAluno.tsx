@@ -38,8 +38,19 @@ type ApiAgendamento = {
   status: number | string;
   alunoId?: number;
   professorId?: number;
-  aluno?: { id: number; nome?: string };
-  professor?: { id: number; nome?: string };
+  aluno?: { id: number; nome?: string } | null;
+  professor?: any; // pode ser string ou objeto dependendo da API
+};
+
+type ProfessorInfo = {
+  id: number;
+  nome?: string | null;
+  email?: string | null;
+};
+
+type AulaAluno = ApiAgendamento & {
+  professorNome?: string | null;
+  professorEmail?: string | null;
 };
 
 export function DashboardAluno() {
@@ -47,8 +58,8 @@ export function DashboardAluno() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [proximas, setProximas] = useState<ApiAgendamento[]>([]);
-  const [historico, setHistorico] = useState<ApiAgendamento[]>([]);
+  const [proximas, setProximas] = useState<AulaAluno[]>([]);
+  const [historico, setHistorico] = useState<AulaAluno[]>([]);
 
   const [alunoNome, setAlunoNome] = useState<string | null>(null);
 
@@ -73,12 +84,15 @@ export function DashboardAluno() {
 
       const alunoId = Number(alunoIdStr);
 
+      const headers = {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
+
+      // 1) Buscar todos os agendamentos
       const response = await fetch(`${API_BASE}/api/Agendamentos`, {
         method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
       });
 
       if (!response.ok) {
@@ -94,8 +108,8 @@ export function DashboardAluno() {
 
       const data: ApiAgendamento[] = await response.json();
 
-      // Filtra só os agendamentos deste aluno
-      const meus = data.filter((ag) => {
+      // 2) Filtrar só os agendamentos deste aluno
+      const meus: ApiAgendamento[] = data.filter((ag) => {
         if (typeof ag.alunoId === 'number') {
           return ag.alunoId === alunoId;
         }
@@ -105,18 +119,105 @@ export function DashboardAluno() {
         return false;
       });
 
-      // Guarda nome do aluno se vier na resposta
+      // Pega nome do aluno se vier
       const algum = meus.find((m) => m.aluno && m.aluno.nome);
       if (algum?.aluno?.nome) {
         setAlunoNome(algum.aluno.nome);
       }
 
+      // 3) Monta lista de IDs de professores para buscar /api/Professores/{id}
+      const professorIds = Array.from(
+        new Set(
+          meus
+            .map((ag) =>
+              typeof ag.professorId === 'number' ? ag.professorId : undefined,
+            )
+            .filter((id): id is number => typeof id === 'number'),
+        ),
+      );
+
+      const profById: Record<number, ProfessorInfo> = {};
+
+      if (professorIds.length > 0) {
+        const profResults = await Promise.all(
+          professorIds.map(async (id) => {
+            try {
+              const resp = await fetch(`${API_BASE}/api/Professores/${id}`, {
+                method: 'GET',
+                headers,
+              });
+              if (!resp.ok) {
+                const t = await resp.text();
+                console.warn(
+                  `[DashboardAluno] Falha ao carregar professor ${id}:`,
+                  t,
+                );
+                return null;
+              }
+              const profData = await resp.json();
+              const profInfo: ProfessorInfo = {
+                id: typeof profData.id === 'number' ? profData.id : id,
+                nome: profData.nome ?? null,
+                email: profData.email ?? null,
+              };
+              return profInfo;
+            } catch (e) {
+              console.warn(
+                `[DashboardAluno] Erro inesperado ao buscar professor ${id}:`,
+                e,
+              );
+              return null;
+            }
+          }),
+        );
+
+        for (const p of profResults) {
+          if (p) {
+            profById[p.id] = p;
+          }
+        }
+      }
+
+      // 4) Junta agendamento + dados do professor (nome + e-mail)
+      const meusComProfessor: AulaAluno[] = meus.map((ag) => {
+        const profInfo =
+          typeof ag.professorId === 'number'
+            ? profById[ag.professorId] || undefined
+            : undefined;
+
+        let professorNome: string | null = null;
+
+        if (profInfo?.nome) {
+          professorNome = profInfo.nome;
+        } else if (
+          ag.professor &&
+          typeof ag.professor === 'object' &&
+          'nome' in ag.professor &&
+          ag.professor.nome
+        ) {
+          professorNome = ag.professor.nome;
+        } else if (typeof ag.professor === 'string') {
+          professorNome = ag.professor;
+        } else {
+          professorNome = 'Professor não informado';
+        }
+
+        const professorEmail = profInfo?.email ?? null;
+
+        return {
+          ...ag,
+          professorNome,
+          professorEmail,
+        };
+      });
+
+      // 5) Separa em próximas x histórico
       const agora = new Date();
 
-      const proximasAulas: ApiAgendamento[] = [];
-      const historicoAulas: ApiAgendamento[] = [];
+      const proximasAulas: AulaAluno[] = [];
+      const historicoAulas: AulaAluno[] = [];
 
-      meus.forEach((ag) => {
+      meusComProfessor.forEach((ag) => {
         const d = new Date(ag.dataHora);
         if (isNaN(d.getTime())) {
           historicoAulas.push(ag);
@@ -130,7 +231,7 @@ export function DashboardAluno() {
         }
       });
 
-      // Ordena por data
+      // Ordenação
       proximasAulas.sort(
         (a, b) => new Date(a.dataHora).getTime() - new Date(b.dataHora).getTime(),
       );
@@ -171,25 +272,26 @@ export function DashboardAluno() {
     return `${dia}/${mes}/${ano} às ${hora}:${min}`;
   }
 
+  // Status pensado do ponto de vista do aluno
   function formatarStatus(status: number | string) {
     if (typeof status === 'string') {
       const s = status.toLowerCase();
-      if (s.includes('pend')) return 'Pendente';
-      if (s.includes('confirm')) return 'Confirmado';
+      if (s.includes('pend')) return 'Aguardando confirmação do professor';
+      if (s.includes('confirm')) return 'Confirmado pelo professor';
+      if (s.includes('concl')) return 'Aula concluída';
       if (s.includes('cancel')) return 'Cancelado';
-      if (s.includes('concl')) return 'Concluído';
       return status;
     }
 
     switch (status) {
       case 0:
-        return 'Pendente';
+        return 'Aguardando confirmação do professor';
       case 1:
-        return 'Confirmado';
+        return 'Confirmado pelo professor';
       case 2:
-        return 'Cancelado';
+        return 'Aula concluída';
       case 3:
-        return 'Concluído';
+        return 'Cancelado';
       default:
         return `Status ${status}`;
     }
@@ -258,7 +360,12 @@ export function DashboardAluno() {
                 <View key={ag.id} style={styles.card}>
                   <Text style={styles.cardLabel}>Professor</Text>
                   <Text style={styles.cardValue}>
-                    {ag.professor?.nome || 'Professor não informado'}
+                    {ag.professorNome || 'Professor não informado'}
+                  </Text>
+
+                  <Text style={styles.cardLabel}>E-mail para contato</Text>
+                  <Text style={styles.cardValue}>
+                    {ag.professorEmail || 'E-mail não disponível no momento.'}
                   </Text>
 
                   <Text style={styles.cardLabel}>Data e horário</Text>
@@ -289,16 +396,29 @@ export function DashboardAluno() {
             ) : (
               historico.map((ag) => (
                 <View key={ag.id} style={styles.cardHistorico}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                    }}
+                  >
                     <Text style={styles.cardValueHistorico}>
-                      {ag.professor?.nome || 'Professor não informado'}
+                      {ag.professorNome || 'Professor não informado'}
                     </Text>
                     <Text style={styles.statusHistorico}>
                       {formatarStatus(ag.status)}
                     </Text>
                   </View>
+
                   <Text style={styles.cardLabelHistorico}>
                     {formatarDataHora(ag.dataHora)}
+                  </Text>
+
+                  <Text style={[styles.cardLabelHistorico, { marginTop: 4 }]}>
+                    Contato:{' '}
+                    <Text style={{ fontWeight: '600' }}>
+                      {ag.professorEmail || 'E-mail não disponível'}
+                    </Text>
                   </Text>
                 </View>
               ))
@@ -460,4 +580,3 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
   },
 });
-

@@ -1,5 +1,5 @@
 // src/screens/teachers/DashboardProfessor.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -28,6 +29,7 @@ const colors = {
   mutedText: '#607D8B',
   white: '#FFFFFF',
   black: '#000000',
+  danger: '#E53935',
 };
 
 const fonts = {
@@ -45,6 +47,24 @@ type Disponibilidade = {
   professorId: number;
 };
 
+type Agendamento = {
+  id: number;
+  dataHora: string;
+  status: number;
+  alunoId: number;
+  aluno?: {
+    id: number;
+    nome: string;
+    email: string;
+    cpf?: string;
+    tipo?: number;
+    descricao?: string;
+  } | null;
+  professorId: number;
+  professor?: string | null;
+  disciplinaId: number;
+};
+
 const diasSemanaLabels = [
   'Domingo',
   'Segunda-feira',
@@ -55,15 +75,63 @@ const diasSemanaLabels = [
   'Sábado',
 ];
 
+function formatDataHora(iso: string | undefined | null): string {
+  if (!iso) return 'Data/hora não informada';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return 'Data/hora não informada';
+
+  const dia = d.getDate().toString().padStart(2, '0');
+  const mes = (d.getMonth() + 1).toString().padStart(2, '0');
+  const ano = d.getFullYear();
+  const hora = d.getHours().toString().padStart(2, '0');
+  const min = d.getMinutes().toString().padStart(2, '0');
+
+  return `${dia}/${mes}/${ano} às ${hora}:${min}`;
+}
+
+// Rótulo genérico de status (pro professor ver)
+function getStatusLabel(status: number): string {
+  switch (status) {
+    case 0:
+      return 'Pendente';
+    case 1:
+      return 'Confirmado';
+    case 2:
+      return 'Concluído';
+    case 3:
+      return 'Cancelado';
+    default:
+      return `Status ${status}`;
+  }
+}
+
+function getStatusColor(status: number): string {
+  switch (status) {
+    case 0:
+      return colors.primary;
+    case 1:
+      return colors.secondary;
+    case 2:
+      return colors.mutedText;
+    case 3:
+      return colors.danger;
+    default:
+      return colors.mutedText;
+  }
+}
+
 export function DashboardProfessor() {
   const navigation = useNavigation<DashboardTabNav>();
 
   const [loading, setLoading] = useState(true);
   const [loadingRefresh, setLoadingRefresh] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [disponibilidades, setDisponibilidades] = useState<Disponibilidade[]>([]);
 
-  async function loadDisponibilidades(showRefreshSpinner = false) {
+  const [disponibilidades, setDisponibilidades] = useState<Disponibilidade[]>([]);
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
+
+  async function loadDashboard(showRefreshSpinner = false) {
     try {
       if (showRefreshSpinner) {
         setLoadingRefresh(true);
@@ -80,40 +148,83 @@ export function DashboardProfessor() {
           'Não encontrei sua sessão de professor. Faça login novamente.',
         );
         setDisponibilidades([]);
+        setAgendamentos([]);
         return;
       }
 
       const professorId = Number(professorIdStr);
 
-      const resp = await fetch(`${API_BASE}/api/Disponibilidades`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const headers = {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
 
-      if (!resp.ok) {
-        const text = await resp.text();
-        console.error('[DashboardProfessor] Erro ao buscar disponibilidades:', text);
+      // Busca disponibilidades e agendamentos em paralelo
+      const [respDisp, respAg] = await Promise.all([
+        fetch(`${API_BASE}/api/Disponibilidades`, {
+          method: 'GET',
+          headers,
+        }),
+        fetch(`${API_BASE}/api/Agendamentos`, {
+          method: 'GET',
+          headers,
+        }),
+      ]);
+
+      // --- Disponibilidades ---
+      if (!respDisp.ok) {
+        const text = await respDisp.text();
+        console.error(
+          '[DashboardProfessor] Erro ao buscar disponibilidades:',
+          text,
+        );
         setErrorMessage(
-          `Não foi possível carregar suas disponibilidades (HTTP ${resp.status}).`,
+          `Não foi possível carregar suas disponibilidades (HTTP ${respDisp.status}).`,
         );
         setDisponibilidades([]);
-        return;
+      } else {
+        const dataDispJson = await respDisp.json();
+        const dataDisp: Disponibilidade[] = Array.isArray(dataDispJson)
+          ? dataDispJson
+          : [];
+        const minhas = dataDisp.filter((d) => d.professorId === professorId);
+        setDisponibilidades(minhas);
       }
 
-      const data: Disponibilidade[] = await resp.json();
+      // --- Agendamentos ---
+      if (!respAg.ok) {
+        const text = await respAg.text();
+        console.error(
+          '[DashboardProfessor] Erro ao buscar agendamentos:',
+          text,
+        );
+        setErrorMessage((prev) =>
+          prev
+            ? prev +
+              ` Também não foi possível carregar seus agendamentos (HTTP ${respAg.status}).`
+            : `Não foi possível carregar seus agendamentos (HTTP ${respAg.status}).`,
+        );
+        setAgendamentos([]);
+      } else {
+        const dataAgJson = await respAg.json();
 
-      // Filtra só as disponibilidades desse professor
-      const minhas = data.filter((d) => d.professorId === professorId);
-      setDisponibilidades(minhas);
+        const dataAg: Agendamento[] = Array.isArray(dataAgJson)
+          ? dataAgJson
+          : [];
+
+        const meusAgendamentos = dataAg.filter(
+          (ag) => ag.professorId === professorId,
+        );
+
+        setAgendamentos(meusAgendamentos);
+      }
     } catch (err: any) {
       console.error('[DashboardProfessor] Erro inesperado:', err);
       setErrorMessage(
-        'Ocorreu um erro ao carregar suas disponibilidades. Verifique sua conexão e tente novamente.',
+        'Ocorreu um erro ao carregar sua agenda. Verifique sua conexão e tente novamente.',
       );
       setDisponibilidades([]);
+      setAgendamentos([]);
     } finally {
       setLoading(false);
       setLoadingRefresh(false);
@@ -121,11 +232,76 @@ export function DashboardProfessor() {
   }
 
   useEffect(() => {
-    loadDisponibilidades(false);
+    loadDashboard(false);
   }, []);
 
+  async function handleAtualizarStatus(agendamento: Agendamento, novoStatus: number) {
+    try {
+      setUpdatingId(agendamento.id);
+
+      const token = await AsyncStorage.getItem('@sabermais_token');
+      if (!token) {
+        Alert.alert(
+          'Sessão expirada',
+          'Faça login novamente para atualizar o agendamento.',
+        );
+        return;
+      }
+
+      // Payload mínimo, compatível com o POST /api/Agendamentos
+      const payload = {
+        id: agendamento.id,
+        dataHora: agendamento.dataHora,
+        status: novoStatus,
+        alunoId: agendamento.alunoId,
+        professorId: agendamento.professorId,
+        disciplinaId: agendamento.disciplinaId,
+      };
+
+      const resp = await fetch(
+        `${API_BASE}/api/Agendamentos/${agendamento.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error(
+          '[DashboardProfessor] Erro ao atualizar status de agendamento:',
+          text,
+        );
+        Alert.alert(
+          'Erro ao atualizar',
+          `Não foi possível atualizar o agendamento (HTTP ${resp.status}).`,
+        );
+        return;
+      }
+
+      // Atualiza em memória
+      setAgendamentos((prev) =>
+        prev.map((ag) =>
+          ag.id === agendamento.id ? { ...ag, status: novoStatus } : ag,
+        ),
+      );
+    } catch (err: any) {
+      console.error('[DashboardProfessor] Erro inesperado ao atualizar status:', err);
+      Alert.alert(
+        'Erro inesperado',
+        'Ocorreu um erro ao atualizar o agendamento. Tente novamente em instantes.',
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   function handleAdicionarDisponibilidade() {
-    // Leva para a aba Perfil, tela Disponibilidade do stack de Perfil
     navigation.navigate('Perfil', { screen: 'Disponibilidade' } as any);
   }
 
@@ -134,6 +310,14 @@ export function DashboardProfessor() {
   }
 
   const isLoadingInitial = loading && !loadingRefresh;
+
+  const agendamentosOrdenados = useMemo(() => {
+    if (!agendamentos || agendamentos.length === 0) return [];
+    return [...agendamentos].sort(
+      (a, b) =>
+        new Date(a.dataHora).getTime() - new Date(b.dataHora).getTime(),
+    );
+  }, [agendamentos]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -150,7 +334,6 @@ export function DashboardProfessor() {
           Acompanhe seus horários disponíveis e organize sua agenda de aulas.
         </Text>
 
-        {/* Caso dê erro crítico (sem sessão, etc.) */}
         {errorMessage && (
           <View style={styles.errorBox}>
             <Text style={styles.errorText}>{errorMessage}</Text>
@@ -163,14 +346,14 @@ export function DashboardProfessor() {
           </View>
         )}
 
-        {/* Bloco de Disponibilidades */}
+        {/* Disponibilidades */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Disponibilidades</Text>
 
             <TouchableOpacity
               style={styles.refreshButton}
-              onPress={() => loadDisponibilidades(true)}
+              onPress={() => loadDashboard(true)}
               disabled={loadingRefresh}
             >
               <Text style={styles.refreshText}>
@@ -225,13 +408,90 @@ export function DashboardProfessor() {
           </TouchableOpacity>
         </View>
 
-        {/* Aqui no futuro dá para colocar “Seus próximos agendamentos” */}
+        {/* Agendamentos */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Próximos agendamentos</Text>
-          <Text style={styles.mutedInfo}>
-            Em breve, esta área vai mostrar suas próximas aulas agendadas com os
-            alunos.
-          </Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Agendamentos</Text>
+          </View>
+
+          {isLoadingInitial ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="small" color={colors.secondary} />
+              <Text style={styles.loadingText}>
+                Carregando seus agendamentos…
+              </Text>
+            </View>
+          ) : agendamentosOrdenados.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>
+                Você ainda não possui aulas agendadas.
+              </Text>
+              <Text style={styles.emptyHint}>
+                Quando os alunos pedirem aulas pelo app, elas aparecerão aqui.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.list}>
+              {agendamentosOrdenados.map((ag) => {
+                const nomeAluno = ag.aluno?.nome || `Aluno #${ag.alunoId}`;
+                const dataHoraFormatada = formatDataHora(ag.dataHora);
+                const statusLabel = getStatusLabel(ag.status);
+                const statusColor = getStatusColor(ag.status);
+                const isUpdating = updatingId === ag.id;
+
+                return (
+                  <View key={ag.id} style={styles.card}>
+                    <Text style={styles.cardTitle}>{nomeAluno}</Text>
+                    <Text style={styles.cardTime}>{dataHoraFormatada}</Text>
+                    <Text style={[styles.cardStatus, { color: statusColor }]}>
+                      {statusLabel}
+                    </Text>
+
+                    {/* Ações apenas quando está pendente */}
+                    {ag.status === 0 && (
+                      <View style={styles.actionsRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.smallButton,
+                            styles.acceptButton,
+                            isUpdating && styles.smallButtonDisabled,
+                          ]}
+                          disabled={isUpdating}
+                          onPress={() =>
+                            handleAtualizarStatus(ag, 1) // 1 = Confirmado
+                          }
+                        >
+                          {isUpdating ? (
+                            <ActivityIndicator size="small" color={colors.white} />
+                          ) : (
+                            <Text style={styles.smallButtonText}>Aceitar</Text>
+                          )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.smallButton,
+                            styles.rejectButton,
+                            isUpdating && styles.smallButtonDisabled,
+                          ]}
+                          disabled={isUpdating}
+                          onPress={() =>
+                            handleAtualizarStatus(ag, 3) // 3 = Cancelado
+                          }
+                        >
+                          {isUpdating ? (
+                            <ActivityIndicator size="small" color={colors.white} />
+                          ) : (
+                            <Text style={styles.smallButtonText}>Recusar</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -335,6 +595,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.text,
     color: colors.mutedText,
   },
+  cardStatus: {
+    fontSize: 12,
+    fontFamily: fonts.text,
+    marginTop: 4,
+  },
   emptyBox: {
     paddingVertical: 8,
   },
@@ -373,7 +638,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     fontFamily: fonts.text,
-    color: '#C62828',
+    color: colors.danger,
     marginBottom: 8,
   },
   errorButton: {
@@ -389,10 +654,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.text,
     fontWeight: '600',
   },
-  mutedInfo: {
+  actionsRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+    gap: 8,
+  },
+  smallButton: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  acceptButton: {
+    backgroundColor: colors.secondary,
+  },
+  rejectButton: {
+    backgroundColor: colors.danger,
+  },
+  smallButtonDisabled: {
+    opacity: 0.7,
+  },
+  smallButtonText: {
+    color: colors.white,
     fontSize: 13,
     fontFamily: fonts.text,
-    color: colors.mutedText,
-    marginTop: 4,
+    fontWeight: '600',
   },
 });
